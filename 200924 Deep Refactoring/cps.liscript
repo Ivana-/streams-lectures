@@ -1,0 +1,155 @@
+﻿; http://liscript.herokuapp.com/repl ;
+
+
+
+"tail recursion"
+(defn foo (n a) cond (= 0 n) a (foo (- n 1) (+ n a)))
+(foo 10000 0)
+(tray foo 10 0)
+
+"mutual tail call"
+(defn is-even? (n) cond (= 0 n) true  (is-odd?  (- n 1)))
+(defn is-odd?  (n) cond (= 0 n) false (is-even? (- n 1)))
+(is-even? 1000000)
+(tray is-even? 10)
+
+"non-tail recursion"
+(defn bar (n) cond (= 0 n) 0 (+ n (bar (- n 1))))
+(bar 10000)
+(tray bar 10)
+
+
+
+; ----------------------------------------------------------------------------- ;
+
+
+(def a (list-from-to 1 10))
+(def b (list-from-to 1 5000))
+
+; ---------------------------- map ;
+
+(defn map-n (f l) cond (null? l) nil (cons (f (car l)) (map-n f (cdr l))))
+
+(defn map-c (f l)
+  (defn go (l cont)
+    cond (null? l) (cont nil)
+         (go (cdr l) (lambda (x) (cont (cons (f (car l)) x)))))
+  (go l id))
+
+(defn inc (x) (+ 1 x))
+(map-n inc a)
+(map-n inc b)
+(map-c inc a)
+(map-c inc b)
+
+; ---------------------------- filter ;
+
+(defn filter-n (f l)
+  cond (null? l) nil
+       (f (car l)) (cons (car l) (filter-n f (cdr l)))
+       (filter-n f (cdr l)))
+
+(defn filter-c (f l)
+  (defn go (l cont)
+    cond (null? l) (cont nil)
+         (f (car l)) (go (cdr l) (lambda (x) (cont (cons (car l) x))))
+         (go (cdr l) (lambda (x) (cont x))))
+  (go l id))
+
+(defn even? (n) (= 0 (mod n 2)))
+(filter-n even? a)
+(filter-n even? b)
+(filter-c even? a)
+(filter-c even? b)
+
+; ---------------------------- foldr ;
+
+(defn foldr-n (f a l) cond (null? l) a (f (car l) (foldr-n f a (cdr l))))
+
+(defn foldr-c (f a l)
+  (defn go (l cont)
+    cond (null? l) (cont a)
+         (go (cdr l) (lambda (x) (cont (f (car l) x)))))
+  (go l id))
+
+(foldr-n + 0 a)
+(foldr-n + 0 b)
+(foldr-c + 0 a)
+(foldr-c + 0 b)
+(foldl   + 0 b)
+
+(foldr-n cons nil a)
+(foldr-n cons nil b)
+(foldr-c cons nil a)
+(foldr-c cons nil b)
+(foldl   cons nil b)
+
+; ---------------------------- mapcar ;
+
+(defn mapcar-n (args)
+  (def f (car args) ls (cdr args))
+  (defn go (ls)
+    cond (any null? ls) nil
+         (cons (eval (cons f (map-n car ls))) (go (map-n cdr ls))))
+  (go ls))
+
+(defn mapcar-c (args)
+  (def f (car args) ls (cdr args))
+  (defn go (ls cont)
+    cond (any null? ls) (cont nil)
+         (go
+           (map-c cdr ls)
+           (lambda (x) (cont (cons (eval (cons f (map-c car ls))) x)))))
+  (go ls id))
+
+(mapcar-n + a a)
+(mapcar-n + b b)
+(mapcar-c + a a)
+(mapcar-c + b b)
+
+; ---------------------------- coin-change ;
+;
+(defn coin-change-n (s coins)
+  cond (= s 0) 1
+       (or (< s 0) (null? coins)) 0
+       (+ (coin-change-n s (cdr coins)) (coin-change-n (- s (car coins)) coins)))
+;
+(defn coin-change-n (s coins)
+  (def memo (java (class "java.util.HashMap") "new"))
+  (defn go (s coins n)
+    (def k (++ s " " n))
+    (cond (= s 0) 1
+          (or (< s 0) (null? coins)) 0
+          (java memo "containsKey" k) (java memo "get" k)
+          ((def r (+ (go s (cdr coins) (- n 1)) (go (- s (car coins)) coins n)))
+           (java memo "put" k r)
+           r)))
+  (go s coins (length coins)))
+;
+(defn coin-change-c (s coins)
+  (defn go (s coins cont)
+    cond (= s 0) (cont 1)
+         (or (< s 0) (null? coins)) (cont 0)
+         (go s (cdr coins) (lambda (x) (go (- s (car coins)) coins (lambda (y) cont (+ x y))))))
+  (go s coins id))
+;
+(defn coin-change-c (s coins)
+  (def memo (java (class "java.util.HashMap") "new"))
+  (defn go (s coins n cont)
+    (def k (++ s " " n))
+    (cond (= s 0) (cont 1.0)
+          (or (< s 0) (null? coins)) (cont 0.0)
+          (java memo "containsKey" k) (cont (java memo "get" k))
+          (go s (cdr coins) (- n 1)
+            (lambda (x) (go (- s (car coins)) coins n
+                          (lambda (y)
+                            (def r (+ x y))
+                            (java memo "put" k r)
+                            (cont r)))))))
+  (go s coins (length coins) id))
+
+(coin-change-n 100 '(1 5 10 25 50))
+(coin-change-n 10000 '(1 333))
+(coin-change-c 100 '(1 5 10 25 50))
+(coin-change-c 10000 '(1 333))
+(coin-change-c 10000 '(1 5 10 25 50))
